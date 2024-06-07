@@ -719,7 +719,6 @@ def query(base_url: str, api_key: str):
     response = ""
     for chat in chat_completions:
         if chat.choices[0].delta.content is not None:
-            print(chat.choices[0].delta.content, end="")
             response += chat.choices[0].delta.content
 
     return response
@@ -731,6 +730,8 @@ def query(base_url: str, api_key: str):
 response = query("http://localhost:8000", "NOT A REAL KEY")
 print (response.split('<|eot_id|>')[0])
 ```
+
+    verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])
 
 ### Production service
 
@@ -756,10 +757,12 @@ Go to `Home` > `Services` (left panel) to view the production service.
 
 ```python
 # Query the remote serve application we just deployed
-service_url = "https://llm-fine-tuning-guide-bxauk.cld-kvedzwag2qa8i5bj.s.anyscaleuserdata.com/"  # FILL ME IN
-service_bearer_token = "your_secret_bearer_token"  # FILL ME IN
+service_url = "your_api_url"  # REPLACE ME
+service_bearer_token = "your_secret_bearer_token"  # REPLACE ME
 query(service_url, service_bearer_token)
 ```
+
+    verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])
 
 **Note**: If we chose to fine-tune our model using the simpler [Anyscale serverless endpoints](https://docs.anyscale.com/endpoints/fine-tuning/fine-tuning-api/) method, then we can serve that model by going to `Endpoints API > Services` on the left panel of the main [console page](https://console.anyscale.com/). Click on the three dots on the right side of your tuned model and follow the instructions to query it.
 
