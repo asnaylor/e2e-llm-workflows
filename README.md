@@ -1,28 +1,29 @@
-# End-to-end LLM Guide 
+# End-to-end LLM Workflows Guide 
 
-In this LLM fine-tuning guide, we'll learn how to execute the end-to-end workflows to develop & deliver LLMs at scale.
+In this guide, we'll learn how to execute the end-to-end LLM workflows to develop & productionize LLMs at scale.
 
 - **Data preprocessing**: prepare our dataset for fine-tuning with batch data processing.
-- **Fine-tuning**: tune our LLM (LoRA / full param) with key optimizations in a distributed fashion.
+- **Fine-tuning**: tune our LLM (LoRA / full param) with key optimizations with distributed training.
 - **Evaluation**: apply batch inference with our tuned LLMs to generate outputs and perform evaluation.
 - **Serving**: serve our LLMs as a production application that can autoscale, swap between LoRA adapters, etc.
 
-Throughout these workloads we'll be using [Ray](https://github.com/ray-project/ray), a framework for distributing ML, used by OpenAI, Netflix, Uber, etc. And [Anyscale](https://anyscale.com/), a platform to scale your ML workloads from development to production.
+Throughout these workloads we'll be using [Ray](https://github.com/ray-project/ray), a framework for distributing ML, used by OpenAI, Netflix, Uber, etc. And [Anyscale](https://anyscale.com/?utm_source=goku), a platform to scale your ML workloads from development to production.
 
-**Additional information**:
-- The total time required to run this notebook is ~45 minutes (including fine-tuning and batch inference workloads).
-- Code blocks that require your unique inputs are denoted with a <b style="background-color: yellow;">&nbsp;🔄 REPLACE&nbsp;</b> tag.
-- Insightful infrastructure and ML features are denoted with an <b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b> tag.
-- If you run into any issues or if have questions, please share them with us using the Slack group icon at the top right corner.
+
+> **&nbsp;💵&nbsp;Cost**: $0 (using free [Anyscale](https://anyscale.com/?utm_source=goku) credits)<br/>
+> **&nbsp;🕑&nbsp;Total time**: 90 mins (including fine-tuning) <br/>
+> <b style="background-color: yellow;">&nbsp;🔄 REPLACE&nbsp;</b> indicates to replace with your unique values <br/>
+> <b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b> indicates infrastructure insight <br/>
+> Join [Slack community](https://join.slack.com/t/anyscaleprevi-a4q8653/shared_invite/zt-2dfpjbnds-qw6jVYgG~HBeuanwtT9_tg) to share issues / questions.<br/>
 
 ## Set up
 
-We can execute this notebook **entirely for free** (no credit card needed) by creating an [Anyscale account](https://console.anyscale.com/register/ha?utm_source=goku). Once you log in, you'll be directed to the main [console](https://console.anyscale.com/) where you'll see a collection of notebook templates we've created. Click on the "End-to-end LLM Guide" to open up the workspace and click on the `README.ipynb` to get started. 
+We can execute this notebook **entirely for free** (no credit card needed) by creating an [Anyscale account](https://console.anyscale.com/register/ha?utm_source=goku). Once you log in, you'll be directed to the main [console](https://console.anyscale.com/) where you'll see a collection of notebook templates. Click on the "End-to-end LLM Workflows" to open up our guide and click on the `README.ipynb` to get started. 
 
-[Workspaces](https://docs.anyscale.com/workspaces/get-started/) are a fully managed development environment which allow us to use our favorite tools (VSCode, notebooks, terminal, etc.) on top of *infinite* compute (when we need it). In fact, by clicking on the compute at the top right (`✅ 1 node, 8 CPU`), we can see the cluster information:
+> [Workspaces](https://docs.anyscale.com/workspaces/get-started/) are a fully managed development environment which allow us to use our favorite tools (VSCode, notebooks, terminal, etc.) on top of *infinite* compute (when we need it). In fact, by clicking on the compute at the top right (`✅ 1 node, 8 CPU`), we can see the cluster information:
 
-- **Head node** (Workspace node): Manages the cluster, distributes tasks, and hosts development tools.
-- **Worker nodes**: Machines that execute work orchestrated by the head node and can scale to 0.
+- **Head node** (Workspace node): manages the cluster, distributes tasks, and hosts development tools.
+- **Worker nodes**: machines that execute work orchestrated by the head node and can scale back to 0.
 
 <img src="assets/setup-compute.png" width=550>
 
@@ -30,7 +31,7 @@ We can execute this notebook **entirely for free** (no credit card needed) by cr
 
 <img src="assets/auto-workers.png" width=350>
 
-**Note**: we can explore all the metrics (ex. hardware util), logs, dashboards, manage dependencies (ex. images, pip packages, etc.) all on the menu bar above.
+**Note**: we can explore all the metrics (ex. hardware util), logs, dashboards, manage dependencies (ex. images, pip packages, etc.) on the menu bar above.
 
 
 ```python
@@ -42,7 +43,7 @@ warnings.filterwarnings("ignore")
 %autoreload 2
 ```
 
-We'll need a [Hugging Face token](https://huggingface.co/settings/tokens) to load base versions of LLMs, tokenizers, etc. And since we are using Llama models, we need to login and accept the terms and conditions [here](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct). 
+We'll need a free [Hugging Face token](https://huggingface.co/settings/tokens) to load our base LLMs and tokenizers. And since we are using Llama models, we need to login and accept the terms and conditions [here](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct). 
 
 <b style="background-color: yellow;">&nbsp;🔄 REPLACE&nbsp;</b>: Place your unique HF token below. If you accidentally ran this code block before pasting your HF token, then click the `Restart` button up top to restart the notebook kernel.
 
@@ -53,9 +54,14 @@ os.environ['HF_TOKEN'] = ''  # <-- replace with your token
 ray.init(runtime_env={'env_vars': {'HF_TOKEN': os.environ['HF_TOKEN']}})
 ```
 
+```bash
+(autoscaler +15m27s) [autoscaler] Downscaling node i-0267f387d8cf66c2e (node IP: 10.0.21.202) due to node idle termination.
+(autoscaler +15m28s) [autoscaler] Cluster resized to {8 CPU, 0 GPU}.
+```
+
 ## Data Preprocessing
 
-We'll start by preprocessing our data in preparation for fine-tuning our model. We'll use batch processing to apply our preprocessing across our dataset at scale.
+We'll start by preprocessing our data in preparation for fine-tuning our LLM. We'll use batch processing to apply our preprocessing across our dataset at scale.
 
 <img src="assets/data-overview.png" width=500>
 
@@ -63,17 +69,18 @@ We'll start by preprocessing our data in preparation for fine-tuning our model. 
 
 For our task, we'll be using the [Viggo dataset](https://huggingface.co/datasets/GEM/viggo) dataset, where the input (`meaning_representation`) is a structured collection of the overall intent (ex. `inform`) and entities (ex. `release_year`) and the output (`target`) is an unstructured sentence that incorporates all the structured input information. But for our task, we'll **reverse** this task where the input will be the unstructured sentence and the output will be the structured information.
 
-```json
-Input (unstructured sentence):
+```python
+# Input (unstructured sentence):
 "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac."
 
-Output (intent + entities): 
+# Output (intent + entities): 
 "inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])"
 ```
 
 
 ```python
 from datasets import load_dataset
+ray.data.set_progress_bars(enabled=False)
 ```
 
 
@@ -104,13 +111,16 @@ print (f"test: {len(test_set)}")
 train_set[0]
 ```
 
-
-
-
-    {'gem_id': 'viggo-train-0',
-     'meaning_representation': 'inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])',
-     'target': "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
-     'references': ["Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac."]}
+```json
+{
+  "gem_id": "viggo-train-0",
+  "meaning_representation": "inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])",
+  "target": "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
+  "references": [
+    "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac."
+  ]
+}
+```
 
 
 
@@ -129,20 +139,31 @@ import re
 train_ds = ray.data.from_items(train_set)
 train_ds.take(1)
 ```
-    [{'gem_id': 'viggo-train-0',
-      'meaning_representation': 'inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])',
-      'target': "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
-      'references': ["Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac."]}]
+
+
+
+```json
+[
+  {
+    "gem_id": "viggo-train-0",
+    "meaning_representation": "inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])",
+    "target": "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
+    "references": [
+      "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac."
+    ]
+  }
+]
+```
 
 
 
 The preprocessing we'll do involves formatting our dataset into the schema required for fine-tuning (`system`, `user`, `assistant`) conversations.
 
-- `system`: Description of the behavior or personality of the model. As a best practice, this should be the same for all examples in the fine-tuning dataset, and should remain the same system prompt when moved to production.
-- `user`: User message, or "prompt," that provides a request for the model to respond to.
-- `assistant`: Stores previous responses but can also contain examples of intended responses for the LLM to return.
+- `system`: description of the behavior or personality of the model. As a best practice, this should be the same for all examples in the fine-tuning dataset, and should remain the same system prompt when moved to production.
+- `user`: user message, or "prompt," that provides a request for the model to respond to.
+- `assistant`: stores previous responses but can also contain examples of intended responses for the LLM to return.
 
-```json
+```yaml
 conversations = [
     {"messages": [
         {'role': 'system', 'content': system_content},
@@ -180,7 +201,7 @@ system_content = (
 
 ```
 
-To apply our function on our dataset as scale, all we have to do with pass it to [ray.data.Dataset.map](https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.map.html). Here, we can specify the function to apply each sample in our data, what compute to use, etc. The diagram below shows how we can read from various data sources (ex. cloud storage) and apply operations at scale across different hardware (CPU, GPU). For our workload, we'll just use the default compute strategy which will use CPUs to scale out our workload.
+To apply our function on our dataset at scale, we can pass it to [ray.data.Dataset.map](https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.map.html). Here, we can specify the function to apply to each sample in our data, what compute to use, etc. The diagram below shows how we can read from various data sources (ex. cloud storage) and apply operations at scale across different hardware (CPU, GPU). For our workload, we'll just use the default compute strategy which will use CPUs to scale out our workload.
 
 **Note**: If we want to distribute a workload across `batches` of our data instead of individual samples, we can use [ray.data.Dataset.map_batches](https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.map_batches.html). We'll see this in action when we perform batch inference in our evaluation template. There are also many other [distributed operations](https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html) we can perform on our dataset.
 
@@ -194,12 +215,28 @@ ft_train_ds = train_ds.map(to_schema, fn_kwargs={'system_content': system_conten
 ft_train_ds.take(1)
 ```
 
-    [{'messages': [{'content': "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
-        'role': 'system'},
-       {'content': "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
-        'role': 'user'},
-       {'content': 'inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])',
-        'role': 'assistant'}]}]
+```json
+[
+  {
+    "messages": [
+      {
+        "content": "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
+        "role": "system"
+      },
+      {
+        "content": "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
+        "role": "user"
+      },
+      {
+        "content": "inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])",
+        "role": "assistant"
+      }
+    ]
+  }
+]
+```
+
+
 
 
 ```python
@@ -210,7 +247,7 @@ ft_test_ds = ray.data.from_items(test_set).map(to_schema, fn_kwargs={'system_con
 
 ### Save and load data
 
-We can save our data locally and/or to remote storage to use later (training, evaluation, etc.). All workspaces come with a default [cloud storage locations and shared storage](https://docs.anyscale.com/workspaces/storage) that you can write to.
+We can save our data locally and/or to remote storage to use later (training, evaluation, etc.). All workspaces come with a default [cloud storage locations and shared storage](https://docs.anyscale.com/workspaces/storage) that we can write to.
 
 
 ```python
@@ -238,12 +275,26 @@ ft_train_ds = ray.data.read_json(f"{os.environ['ANYSCALE_ARTIFACT_STORAGE']}/vig
 ft_train_ds.take(1)
 ```
 
-    [{'messages': [{'content': "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
-        'role': 'system'},
-       {'content': "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
-        'role': 'user'},
-       {'content': 'inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])',
-        'role': 'assistant'}]}]
+```json
+[
+  {
+    "messages": [
+      {
+        "content": "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
+        "role": "system"
+      },
+      {
+        "content": "Dirt: Showdown from 2012 is a sport racing game for the PlayStation, Xbox, PC rated E 10+ (for Everyone 10 and Older). It's not available on Steam, Linux, or Mac.",
+        "role": "user"
+      },
+      {
+        "content": "inform(name[Dirt: Showdown], release_year[2012], esrb[E 10+ (for Everyone 10 and Older)], genres[driving/racing, sport], platforms[PlayStation, Xbox, PC], available_on_steam[no], has_linux_release[no], has_mac_release[no])",
+        "role": "assistant"
+      }
+    ]
+  }
+]
+```
 
 
 
@@ -257,9 +308,9 @@ In this template, we'll fine-tune a large language model (LLM) using our dataset
 
 ### Configurations
 
-We'll fine-tune our LLM by choosing a set of configurations. We have created recipes for different LLMs in the [`training configs`](configs/training/lora/llama-3-8b.yaml) folder which can be used as is or modified for experiments. These configurations provide flexibility over a broad range of parameters such as model, data paths, compute to use for training, number of training ecpohs, how often to save checkpoints, padding, loss, etc. We also include several [DeepSpeed](https://github.com/microsoft/DeepSpeed) [configurations](configs/deepspeed/zero_3_offload_optim+param.json) to choose from for further optimizations around data/model parallelism, mixed precision, checkpointing, etc.
+We'll fine-tune our LLM by choosing a set of configurations. We have created recipes for different LLMs in the [`training configs`](configs/training/lora/llama-3-8b.yaml) folder which can be used as is or modified for experiments. These configurations provide flexibility over a broad range of parameters such as model, data paths, compute to use for training, number of training epochs, how often to save checkpoints, padding, loss, etc. We also include several [DeepSpeed](https://github.com/microsoft/DeepSpeed) [configurations](configs/deepspeed/zero_3_offload_optim+param.json) to choose from for further optimizations around data/model parallelism, mixed precision, checkpointing, etc.
 
-We also have recipes for [LoRA](https://arxiv.org/abs/2106.09685) (where we train a set of small low ranked matrices instead of the original attention and feed forward layers) or full parameter fine-tuning. We recommend starting with LoRA as it's less resources intensive and quicker to train.
+We also have recipes for [LoRA](https://arxiv.org/abs/2106.09685) (where we train a set of small low ranked matrices instead of the original attention and feed forward layers) or full parameter fine-tuning. We recommend starting with LoRA as it's less resource intensive and quicker to train.
 
 
 ```python
@@ -273,7 +324,7 @@ train_path: s3://llm-guide/data/viggo/train.jsonl # <-- change this to the path 
 valid_path: s3://llm-guide/data/viggo/val.jsonl # <-- change this to the path to your validation data. This is optional
 context_length: 512 # <-- change this to the context length you want to use
 num_devices: 16 # <-- change this to total number of GPUs that you want to use
-num_epochs: 5 # <-- change this to the number of epochs that you want to train for
+num_epochs: 4 # <-- change this to the number of epochs that you want to train for
 train_batch_size_per_device: 16
 eval_batch_size_per_device: 16
 learning_rate: 1e-4
@@ -310,9 +361,10 @@ lora_config:
     init_lora_weights: true
 ```
 
+
 ### Fine-tuning
 
-This Workspace is still running on a small, lean head node. But based on the compute we want to use (ex. `num_devices` and `accelerator_type`), the appropraite worker nodes will automatically be initialized and execute the workload. And afterwards, they'll scale back to zero! 
+This Workspace is still running on a small, lean head node. But based on the compute we want to use (ex. `num_devices` and `accelerator_type`) for fine-tuning, the appropriate worker nodes will automatically be initialized and execute the workload. And afterwards, they'll scale back to zero!
 
 <b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b>: With [Ray](https://docs.ray.io/) we're able to execute a large, compute intensive workload like this using smaller, more available resources (ex. using `A10`s instead of waiting for elusive `A100`s). And Anyscale's smart instance manager will automatically provision the appropriate and available compute for the workload based on what's needed.
 
@@ -320,7 +372,7 @@ This Workspace is still running on a small, lean head node. But based on the com
 
 While we could execute `python src/ft.py configs/training/lora/llama-3-8b.yaml` directly inside a Workspace notebook (see this [example](https://console.anyscale.com/v2/template-preview/finetuning_llms_v2)), we'll instead kick off the fine-tuning workload as an isolated job. An [Anyscale Job](https://docs.anyscale.com/jobs/get-started/) is a great way to scale and execute a specific workload. Here, we specify the command that needs to run (ex. `python [COMMAND][ARGS]`) along with the requirements (ex. docker image, additional, pip packages, etc.).
 
-**Note**: Executing an Anyscale Job within a Workspace will ensure that files in the current working directory are available for the Job (unless exlcuded with `--exclude`). But we can also load files from anywhere (ex. Github repo, S3, etc.) if we want to launch a Job from anywhere.
+**Note**: Executing an Anyscale Job within a Workspace will ensure that files in the current working directory are available for the Job (unless excluded with `--exclude`). But we can also load files from anywhere (ex. Github repo, S3, etc.) if we want to launch a Job from anywhere.
 
 
 ```python
@@ -335,9 +387,9 @@ image_uri: localhost:5555/anyscale/llm-forge:0.4.3.2
 requirements: []
 max_retries: 0
 ```
-    
 
-<b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b>: When defining this [Job config](https://docs.anyscale.com/reference/job-api/), if we don't specify the [compute config](https://docs.anyscale.com/configure/compute-configs/overview/) to use then Anyscale will autoselect based on the required compute. However, we also have the optionality to specify and even make highly cost effective decisions such as [spot to on-demand fallback](https://docs.anyscale.com/configure/compute-configs/ondemand-to-spot-fallback/) (or vice-versa).
+
+<b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b>: When defining this [Job config](https://docs.anyscale.com/reference/job-api/), if we don't specify the [compute config](https://docs.anyscale.com/configure/compute-configs/overview/) to use, then Anyscale will autoselect based on the required compute. However, we also have the optionality to specify and even make highly cost effective decisions such as [spot to on-demand fallback](https://docs.anyscale.com/configure/compute-configs/ondemand-to-spot-fallback/) (or vice-versa).
 
 ```yaml
 # Sample compute config
@@ -355,7 +407,16 @@ max_retries: 0
 !anyscale job submit --config-file deploy/jobs/ft.yaml --exclude assets
 ```
 
-This workload (we set to five epochs) will take ~30 min. to complete. As the job runs, you can monitor logs, metrics, Ray dashboard, etc. by clicking on the generated Job link above (`https://console.anyscale.com/jobs/prodjob_...`)
+```bash
+Output
+(anyscale +0.8s) Submitting job with config JobConfig(name='llm-fine-tuning-guide', image_uri='localhost:5555/anyscale/llm-forge:0.4.3.2', compute_config=None, env_vars=None, py_modules=None).
+(anyscale +3.2s) Uploading local dir '.' to cloud storage.
+(anyscale +4.8s) Job 'llm-fine-tuning-guide' submitted, ID: 'prodjob_515se1nqf8ski7scytd52vx65e'.
+(anyscale +4.8s) View the job in the UI: https://console.anyscale.com/jobs/prodjob_515se1nqf8ski7scytd52vx65e
+(anyscale +4.8s) Use `--wait` to wait for the job to run and stream logs.
+```
+
+This workload (we set to five epochs) will take ~45 min. to complete. As the job runs, you can monitor logs, metrics, Ray dashboard, etc. by clicking on the generated Job link above (`https://console.anyscale.com/jobs/prodjob_...`)
 
 <img src="assets/gpu-util.png" width=800>
 
@@ -403,7 +464,7 @@ from src.utils import download_files_from_bucket
 ```python
 # Locations
 artifacts_dir = '/mnt/cluster_storage'  # storage accessible by head and worker nodes
-model = 'meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk'
+model = 'meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk'  # REPLACE with your model ID (from Job logs)
 artifacts_path = f'org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/{model}'
 ```
 
@@ -417,13 +478,8 @@ download_files_from_bucket(
 
 ```
 
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/README.md to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/README.md
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/adapter_config.json to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/adapter_config.json
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/adapter_model.safetensors to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/adapter_model.safetensors
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/config.json to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/config.json
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/new_embeddings.safetensors to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/new_embeddings.safetensors
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/special_tokens_map.json to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/special_tokens_map.json
-    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/tokenizer.json to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/tokenizer.json
+    Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/README.md to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/
+    ...
     Downloaded org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/tokenizer_config.json to /mnt/cluster_storage/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning/meta-llama/Meta-Llama-3-8B-Instruct:gokum:atyhk/tokenizer_config.json
 
 
@@ -444,12 +500,25 @@ test_data[0]
 
 ```
 
-    {'messages': [{'content': "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
-    'role': 'system'},
-    {'content': 'I remember you saying you found Little Big Adventure to be average. Are you not usually that into single-player games on PlayStation?',
-    'role': 'user'},
-    {'content': 'verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])',
-    'role': 'assistant'}]}
+```json
+{
+  "messages": [
+    {
+      "content": "Given a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']",
+      "role": "system"
+    },
+    {
+      "content": "Have you ever given any games on PC but not on Steam a try, like The Sims?",
+      "role": "user"
+    },
+    {
+      "content": "suggest(name[The Sims], platforms[PC], available_on_steam[no])",
+      "role": "assistant"
+    }
+  ]
+}
+```
+
 
 
 
@@ -478,12 +547,9 @@ HF_MODEL = 'meta-llama/Meta-Llama-3-8B-Instruct'
 tokenizer = AutoTokenizer.from_pretrained(HF_MODEL)
 ```
 
-    Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
-
-
 ### Chat template
 
-When we fine-tuned our model, special tokens (ex. beginnging/end of text, etc.) were automatically added to our inputs. We want to apply the same special tokens to our inputs prior to generating outputs using our tuned model. Luckily, the chat template to apply to our inputs (and add those tokens) is readily avaiable inside our tuned model's `tokenizer_config.json` file. We can use our tokenizer to apply this template to our inputs.
+When we fine-tuned our model, special tokens (ex. beginning/end of text, etc.) were automatically added to our inputs. We want to apply the same special tokens to our inputs prior to generating outputs using our tuned model. Luckily, the chat template to apply to our inputs (and add those tokens) is readily available inside our tuned model's `tokenizer_config.json` file. We can use our tokenizer to apply this template to our inputs.
 
 
 ```python
@@ -519,7 +585,19 @@ test_input_prompts_ds = ray.data.from_items(test_input_prompts)
 print (test_input_prompts_ds.take(1))
 ```
 
-    [{'inputs': "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nI remember you saying you found Little Big Adventure to be average. Are you not usually that into single-player games on PlayStation?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", 'outputs': [{'content': 'verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])', 'role': 'assistant'}]}]
+```json
+[
+  {
+    "inputs": "system\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']user\n\nHave you ever given any games on PC but not on Steam a try, like The Sims?assistant\n\n",
+    "outputs": [
+      {
+        "content": "suggest(name[The Sims], platforms[PC], available_on_steam[no])",
+        "role": "assistant"
+      }
+    ]
+  }
+]
+```
 
 
 ### Batch inference
@@ -564,7 +642,7 @@ class LLMPredictor:
         }
 ```
 
-During our data preprocessing template we used the default compute strategy with `map_batches` but this time we'll specify a custom compute strategy (`concurrency`, `num_gpus`, `batch_size` and `accelerator_type`).
+During our data preprocessing template, we used the default compute strategy with `map_batches`. But this time we'll specify a custom compute strategy (`concurrency`, `num_gpus`, `batch_size` and `accelerator_type`).
 
 
 ```python
@@ -591,9 +669,25 @@ ft_pred = ft_pred_ds.take_all()
 ft_pred[3]
 ```
 
-    {'expected_output': array([{'content': 'give_opinion(name[Might & Magic: Heroes VI], rating[average], player_perspective[bird view], platforms[PC])', 'role': 'assistant'}], dtype=object),
+```bash
+(autoscaler +6m32s) Tip: use `ray status` to view detailed cluster status. To disable these messages, set RAY_SCHEDULER_EVENTS=0.
+(autoscaler +6m32s) [autoscaler] [4xA10G:48CPU-192GB] Upscaling 1 node(s).
+(autoscaler +6m33s) [autoscaler] [4xA10G:48CPU-192GB|g5.12xlarge] [us-west-2a] [on-demand] Launched 1 instances.
+(autoscaler +7m46s) [autoscaler] Cluster upscaled to {56 CPU, 4 GPU}.
+```
 
-     'generated_text': 'give_opinion(name[Might & Magic: Heroes VI], rating[average], player_perspective[bird view], platforms[PC])<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'}
+```json
+{
+  "prompt": "system\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']user\n\nI like first person games normally, but not even that could make a music game fun for me. In fact in Guitar Hero: Smash Hits, I think the perspective somehow made an already bad game even worse.assistant\n\n",
+  "expected_output": [
+    {
+      "content": "give_opinion(name[Guitar Hero: Smash Hits], rating[poor], genres[music], player_perspective[first person])",
+      "role": "assistant"
+    }
+  ],
+  "generated_text": "give_opinion(name[Guitar Hero: Smash Hits], rating[poor], genres[music], player_perspective[first person])assistant\n\n"
+}
+```
 
 
 
@@ -601,9 +695,7 @@ ft_pred[3]
 
 There are a lot of different ways to perform evaluation. For our task, we can use traditional deterministic metrics (ex. accuracy, precsion, recall, etc.) since we know what the outputs should be (extracted intent and entities). 
 
-However for many generative tasks, the outputs are very unstructured and highly subjective. For these scenarios, we can use [distance/entropy](https://github.com/huggingface/evaluate) based metrics like cosine, bleu, perplexity, etc. 
-
-However, these metrics are often not very representative of the underyling task. A common strategy here is to use a larger LLM to [judge the quality](https://www.anyscale.com/blog/a-comprehensive-guide-for-building-rag-based-llm-applications-part-1#evaluation) of the generated outputs. We can ask the larger LLM to directly assess the quality of the response (ex. rate between `1-5`) with a set of rules or compare it to a golden / preferred output and rate it against that.
+However for many generative tasks, the outputs are very unstructured and highly subjective. For these scenarios, we can use [distance/entropy](https://github.com/huggingface/evaluate) based metrics like cosine, bleu, perplexity, etc. But, these metrics are often not very representative of the underlying task. A common strategy here is to use a larger LLM to [judge the quality](https://www.anyscale.com/blog/a-comprehensive-guide-for-building-rag-based-llm-applications-part-1#evaluation) of the generated outputs. We can ask the larger LLM to directly assess the quality of the response (ex. rate between `1-5`) with a set of rules or compare it to a golden / preferred output and rate it against that.
 
 
 ```python
@@ -621,11 +713,11 @@ matches / float(len(ft_pred))
 
 
 
-    0.938134810710988
+    0.9399815327793167
 
 
 
-Even our mismatches are not too far off and sometimes it might be worth a closer look because the dataset itself might be missing a few things that the model may have identified.
+Even our mismatches are not too far off and sometimes it might be worth a closer look because the dataset itself might have a few errors that the model may have identified.
 
 
 ```python
@@ -633,23 +725,37 @@ Even our mismatches are not too far off and sometimes it might be worth a closer
 mismatches[0:2]
 ```
 
+```json
+[
+  {
+    "prompt": "system\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']user\n\nDance Dance Revolution Universe 3 got poor ratings when it came out in 2008. It might have been the worst multiplayer music game for the Xbox.assistant\n\n",
+    "expected_output": [
+      {
+        "content": "inform(name[Dance Dance Revolution Universe 3], release_year[2008], rating[poor], genres[music], has_multiplayer[yes], platforms[Xbox])",
+        "role": "assistant"
+      }
+    ],
+    "generated_text": "give_opinion(name[Dance Dance Revolution Universe 3], release_year[2008], rating[poor], has_multiplayer[yes], platforms[Xbox])assistant\n\n"
+  },
+  {
+    "prompt": "system\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']user\n\nA first person game I recently got on Steam is Assetto Corsa. Have you heard of it?assistant\n\n",
+    "expected_output": [
+      {
+        "content": "recommend(name[Assetto Corsa], player_perspective[first person], available_on_steam[yes])",
+        "role": "assistant"
+      }
+    ],
+    "generated_text": "recommend(name[Assetto Corsa], available_on_steam[yes])assistant\n\n"
+  }
+]
 
-
-
-    [{'prompt': "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nWorld of Warcraft is an MMORPG adventure game that was released in 2004 by Blizzard Entertainment.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-      'expected_output': array([{'content': 'inform(name[World of Warcraft], release_year[2004], developer[Blizzard Entertainment], genres[adventure, MMORPG])', 'role': 'assistant'}],
-            dtype=object),
-      'generated_text': 'inform(name[World of Warcraft], release_year[2004], developer[Blizzard Entertainment], genres[adventure, MMORPG], platforms[PC])<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'},
-     {'prompt': "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nGiven a target sentence construct the underlying meaning representation of the input sentence as a single function with attributes and attribute values. This function should describe the target string accurately and the function must be one of the following ['inform', 'request', 'give_opinion', 'confirm', 'verify_attribute', 'suggest', 'request_explanation', 'recommend', 'request_attribute']. The attributes must be one of the following: ['name', 'exp_release_date', 'release_year', 'developer', 'esrb', 'rating', 'genres', 'player_perspective', 'has_multiplayer', 'platforms', 'available_on_steam', 'has_linux_release', 'has_mac_release', 'specifier']<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nAh, I wish Mirror's Edge Catalyst was on Steam, they're the only game source I trust to be legit.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-      'expected_output': array([{'content': "give_opinion(name[Mirror's Edge Catalyst], rating[poor], available_on_steam[no])", 'role': 'assistant'}],
-            dtype=object),
-      'generated_text': "give_opinion(name[Mirror's Edge Catalyst], rating[average], available_on_steam[no])<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"}]
+```
 
 
 
 ## Serving
 
-Now we'll serve our model. We'll first serve it locally, test it and then launch a production grade service that can autoscale to meet any demand.
+For model serving, we'll first serve it locally, test it and then launch a production grade service that can autoscale to meet any demand.
 
 <img src="assets/online-overview.png" width=500>
 
@@ -678,7 +784,24 @@ python /home/ray/default/src/generate_serve_config.py
 !cat /home/ray/default/deploy/services/serve_{TIMESTAMP}.yaml
 ```
 
-We've also generated a model configuration file that has all the information on auto scaling, inference engine, workers, compute, etc. It will be located under `model_config/{MODEL_NAME}-{TIMESTAMP}.yaml`. This configuration also includes the `prompt_format` which seamlessly matches any formatting we did prior to fine-tuning and applies it during inference automatically.
+```yaml
+applications:
+- args:
+    dynamic_lora_loading_path: s3://anyscale-test-data-cld-i2w99rzq8b6lbjkke9y94vi5/org_7c1Kalm9WcX2bNIjW53GUT/cld_kvedZWag2qA8i5BjxUevf5i7/artifact_storage/lora_fine_tuning
+    embedding_models: []
+    function_calling_models: []
+    models: []
+    multiplex_lora_adapters: []
+    multiplex_models:
+    - ./model_config/model_config_20240516095237.yaml
+    vllm_base_models: []
+    import_path: aviary_private_endpoints.backend.server.run:router_application
+    name: llm-endpoint
+    route_prefix: /
+```
+
+
+This also generates a model configuration file that has all the information on auto scaling, inference engine, workers, compute, etc. It will be located under `/home/ray/default/deploy/services/model_config/{MODEL_NAME}-{TIMESTAMP}.yaml`. This configuration also includes the `prompt_format` which seamlessly matches any formatting we did prior to fine-tuning and applies it during inference automatically.
 
 ### Local deployment
 
@@ -720,7 +843,6 @@ def query(base_url: str, api_key: str):
     for chat in chat_completions:
         if chat.choices[0].delta.content is not None:
             response += chat.choices[0].delta.content
-
     return response
 ```
 
@@ -731,11 +853,16 @@ response = query("http://localhost:8000", "NOT A REAL KEY")
 print (response.split('<|eot_id|>')[0])
 ```
 
-    verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])
+
+
+
+    'verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])'
+
+
 
 ### Production service
 
-Now we'll create a production service that will be launched for scale. We have full control over this Service from autoscaling behavior, monitoring via dashboard, canary rollouts, termination, etc. → [Anyscale Services](https://docs.anyscale.com/preview/examples/intro-services)
+Now we'll create a production service that can truly scale. We have full control over this Service from autoscaling behavior, monitoring via dashboard, canary rollouts, termination, etc. → [Anyscale Services](https://docs.anyscale.com/examples/intro-services/)
 
 <b style="background-color: orange;">&nbsp;💡 INSIGHT&nbsp;</b>: With Ray Serve and Anyscale, it's extremely easy to define our configuration that can scale to meet any demand but also scale back to zero to create the most efficient service possible. Check out this [guide](https://github.com/anyscale/templates/blob/main/templates/endpoints_v2/examples/OptimizeModels.ipynb) on how to optimize behavior around auto scaling, latency/throughout, etc.
 
@@ -762,17 +889,22 @@ service_bearer_token = "your_secret_bearer_token"  # REPLACE ME
 query(service_url, service_bearer_token)
 ```
 
-    verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])
+
+
+
+    'verify_attribute(name[Little Big Adventure], rating[average], has_multiplayer[no], platforms[PlayStation])'
+
+
 
 **Note**: If we chose to fine-tune our model using the simpler [Anyscale serverless endpoints](https://docs.anyscale.com/endpoints/fine-tuning/fine-tuning-api/) method, then we can serve that model by going to `Endpoints API > Services` on the left panel of the main [console page](https://console.anyscale.com/). Click on the three dots on the right side of your tuned model and follow the instructions to query it.
 
 ## Dev → Prod
 
-We've now served our model into production via [Anyscale Services](https://docs.anyscale.com/examples/intro-services/) but we can just easily productionize our other workloads with [Anyscale Jobs](https://docs.anyscale.com/examples/intro-jobs/) (like we did for fine-tuning above) to execute this entire workflow completely programatically ouside of Workspaces.
+We've now served our model into production via [Anyscale Services](https://docs.anyscale.com/examples/intro-services/) but we can just easily productionize our other workloads with [Anyscale Jobs](https://docs.anyscale.com/examples/intro-jobs/) (like we did for fine-tuning above) to execute this entire workflow completely programmatically outside of Workspaces.
 
 <img src="assets/jobs.png" width=650>
 
-For example, suppose that we want to preprocess batches of new incoming data, fine-tune a model, evaluate it and then compare it to the existing production version. All of this can be productionized by simply launching the workload as a [Job](https://docs.anyscale.com/preview/examples/intro-jobs), which can be triggered manually, periodically (cron) or event-based (via webhooks, etc.). We also provide integrations with your platform/tools to make all of this connect with your existing production workflows.
+For example, suppose that we want to preprocess batches of new incoming data, fine-tune a model, evaluate it and then compare it to the existing production version. All of this can be productionized by simply launching the workload as a [Job](https://docs.anyscale.com/examples/intro-jobs), which can be triggered manually, periodically (cron) or event-based (via webhooks, etc.). We also provide integrations with your platform/tools to make all of this connect with your existing production workflows.
 
 <img src="assets/ai-platform.png" width=650>
 
